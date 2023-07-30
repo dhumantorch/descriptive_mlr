@@ -4,10 +4,10 @@ because the collection details weren't made clear where it was posted*, but I ca
 both graphically and numerically, and checking the assumptions to ensure validity of any inference that you might wish to do.
 
 # Setup
-You can read the .md file to just examine the presentation, or you can download R, download RStudio, then download my .rmd file and open it with RStudio.  Or just look at the .rmd file and see how short my code falls
-from production standards. ;)
+You can read the .md file to just examine the presentation, or you can download R, download RStudio, then download my .rmd file and open it with RStudio (details below).  Or just look at the .rmd file and see how short my code falls
+from production standards. ;)  But essentially, you can view my code right here in descriptive_mlr2.rmd, and know that that code just creates the presentation in descriptive_mlr2.md.
 
-You'll want to download the dataset, Salary_Data_Based_country_and_race.csv, and once inside RStudio, navigate to the folder that the .csv file is in.  <- To do this, within RStudio, on the right, click the "Files" button,
+To run it yourself, you'll want to download the dataset, Salary_Data_Based_country_and_race.csv (found in the repo AND in the link below), and once inside RStudio, navigate to the folder that the .csv file is in.  <- To do this, within RStudio, on the right, click the "Files" button,
 then navigate to the proper directory, then click "More" and click "Set As Working Directory." Then, you can run each cell.  To run a cell in RStudio,
 simply highlight the code wrapped in ```{r} code cell is here ``` and press CTRL+Enter.
 
