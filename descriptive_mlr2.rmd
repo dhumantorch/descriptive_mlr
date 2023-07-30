@@ -1,0 +1,237 @@
+---
+title: "Multiple Linear Regression Exploratory Demo"
+author: "David Bird"
+date: "7/25/2023"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Introduction
+
+In this demo, I'm going to use Multiple Linear Regression to conduct descriptive data analysis on a dataset. Descriptive analysis describes the data as it is, whereas inference attempts to use the data to describe the population it came from, and prediction attempts to predict a given future data value or values.
+
+We are going to look at the relationship between salary as a response variable, and Age, Years of Experience, Country, and Education Level as explanatory variables. I'm using a Kaggle dataset which provides salary data along with Age, Gender, Education Level, Job Title, Years of Experience, Country, and Race (with X being an index variable for the rows).  Let's take a look!
+
+Data source: **https://www.kaggle.com/datasets/sudheerp2147234/salary-dataset-based-on-country-and-race**
+
+```{r message=FALSE, warning=FALSE}
+#echo = FALSE, results = 'hide', warning = FALSE, and message = FALSE
+#Import the libraries
+library(ggplot2)
+library(dplyr)
+library(broom)
+library(car)
+library(gridExtra)
+```
+
+Since we're not conducting statistical inference, we can snoop and look at the data we're dealing with.  I usually look at the first few rows, the structure, and a summary of the variables showing mins and maxes.
+
+## Explore the Data
+```{r}
+#Read in the dataset
+dat <- read.csv('Salary_Data_Based_country_and_race.csv')
+```
+
+**The first six rows of the dataset:**
+```{r}
+#Gather summaries of the data
+head(dat)
+#dim(dat)
+```
+
+**The dataset structure:**
+```{r}
+str(dat)
+```
+
+**A numerical summary of the dataset:**
+```{r}
+summary(dat)
+```
+**I check for outliers first.  Years.of.Experience looks like it might have some outliers, with a mean of 8, 3rd quartile of 12, and Max of 34, so I'll look at the histograms to see.**
+
+```{r fig.height=4, fig.width=6}
+#Plot Years of Experience to look for outliers
+hist(dat$Years.of.Experience, xlab='Years of Experience', main='Years of Experience')
+hist(dat$Age, xlab='Age', main='Age')
+hist(dat$Salary, xlab='Salary', main='Salary')
+```
+Years.of.Experience definitely has a long right tail, but I wouldn't exactly call 34 an outlier here, because it's more like a natural progression of the data.  The other histograms look fine.  Keep in mind that we don't automatically remove outliers anyway, because sometimes those are the most interesting points for study!
+
+## Cleaning the Data
+
+Next, I look for missing values.  The options with missing values are: replace the missing values with something, such as the mean of the column the missing value is in, or delete the row that contains the missing data;in most cases, R will do this for you, so you don't have to (Python will not, to my knowledge).  Obviously you don't want to delete large swaths of data from your dataset if you can help it.
+```{r}
+#Find NA values
+unique(dat$Education.Level)
+```
+
+I see that while the summary reports find no missing values within the text variables, if we list, say, the Education Levels, we see that some just have "", which is really a missing value.  Also, we see PhD and phD listed separately, as well as Bachelor's and Bachelor's Degree (and again with Master's), when these are really the same thing.  I need to clean it up!
+
+```{r}
+#Fix duplicate column entries and properly identify NA values
+dat$Education.Level[dat$Education.Level == "phD"] <- "PhD"
+dat$Education.Level[dat$Education.Level == "Bachelor's"] <- "Bachelor's Degree"
+dat$Education.Level[dat$Education.Level == "Master's"] <- "Master's Degree"
+dat$Education.Level[dat$Education.Level == ""] <- NA
+
+#Show results
+unique(dat$Education.Level)
+```
+**Number of NA values in Education.Level:**
+```{r}
+sum(is.na(dat$Education.Level))
+```
+
+We now see that there is 1 entry for PhD, 1 for Master's, etc, and that there are 3 missing (NA) values here. I'll perform a similar cleanup on the other variables, but I omit the visualization for brevity.  I will list the number of NA values in each column.
+
+```{r}
+#Check other character variables for redundant listings and NAs, commented out for report visual quality:
+#unique(dat$Gender)
+#unique(dat$Job.Title)
+#unique(dat$Country)
+#unique(dat$Race)
+
+#Fix NAs
+dat$Gender[dat$Gender == ""] <- NA
+dat$Job.Title[dat$Job.Title == ""] <- NA
+
+#Show NAs per column
+apply(dat, 2, function(x) sum(is.na(x)))
+```
+The highest number of NA values is 5, in the Salary column.  Out of 6700 data points, this is not significant.  In determining whether or not to delete a large number of NA values, we have to consider whether the data is missing at random (such as dropped packets during data transmission) or missing not at random (such as if someone went in and deleted the highest 5 salaries).  Since we have so few missing values, let's take a look at those rows:
+
+
+```{r}
+#Print rows with NA values
+missing <- dat[rowSums(is.na(dat)) > 0,]
+missing
+```
+
+We will be asking exploratory questions related to the salary, so I'm going to drop the rows with a missing salary.  We will proceed with exploratory analysis from here, with the assumption that our 5 salaries were missing at random.
+
+```{r}
+#Drop NA values in Salary, then print all NA values in the dataset
+dat <- dat %>% filter(!(is.na(Salary)))
+apply(dat, 2, function(x) sum(is.na(x)))
+```
+
+## Feature Scaling and Encoding Categorical Variables
+
+The next things to consider are feature scaling, or standardization, and encoding categorical variables.  We don't have to standardize the data for Multiple Linear Regression, and we don't have to encode categorical variables in R--R will do it automatically.  I've commented out the code for encoding the categorical variables as factors in case you want to run it, but I'll leave it out to demonstrate that R handles it for us.
+
+```{r}
+#Encoding the categorical variables as factors
+#for (i in c('Gender', 'Education.Level', 'Job.Title', 'Country', 'Race')) {
+#  dat[[i]] <- as.factor(dat[[i]])
+#}
+#head(dat)
+```
+## Assumptions of Multiple Linear Regression and Independence
+Now that I've finished cleaning the data, it's time to check the data for its adherence to the assumptions of Multiple Linear Regression, and for multicollinearity.  The assumptions are:
+1. The data must be independent
+2. The response variable must have a linear relationship with the explanatory variables
+3. The residuals must be normally distributed around the mean
+4. The residuals must have constant variance around the mean
+
+This is a Kaggle dataset, and doesn't have a lot of information on the data collection methods.  For this demo, I will assume that the data is independent.
+
+To examine linearity, I will plot Salary against the other numerical variables.  We'll also look at Age vs Years of Experience to check for multicollinearity:
+
+```{r fig.height=3}
+#Plots to check linearity and multicollinearity
+qplot(Salary, Age, data=dat)
+qplot(Salary, Years.of.Experience, data=dat)
+qplot(Years.of.Experience, Age, data=dat)
+```
+We see that there is definitely evidence of a linear relationship between Salary and the other variables, and we see some evidence of multicollinearity between Age and Years of Experience.  This can affect the variance of the estimates of the effect of Age vs the effect of Years of Experience.
+
+I will now fit a multiple linear regression model, using Salary as the response variable, and Age, Years of Experience, Country, and Education Level as explanatory variables.  The mathematical model is as follows, with education level Bachelor's and Country Australia being factored in as the default:
+
+## Mathematical Model and Model Summary
+$$\hat{y} = \beta_{0} + \beta_{1}Age + \beta_{2}Years.of.Experience + \beta_{3}CountryCanada +
+\beta_{4}CountryChina + \beta_{5}CountryUK +$$
+$$+ \beta_{6}CountryUS +\beta_{7}HighSchool + \beta_{8}Masters +
+\beta_{9}PhD +\epsilon_{i}$$
+
+Model Summary:
+```{r}
+#Set seed so that the reader's random results will be the same as my own
+set.seed(123)
+
+#Fit MLR Model and view summary
+mod <- lm(Salary ~ Age + Years.of.Experience + Country + Education.Level, data=dat)
+summary(mod)
+```
+
+
+We see that Age and Years of Experience both have significant effects on Salary, that Country isn't deemed significant by the model, and that High School, Master's, and PhD have a strong effect on Salary compared to Bachelor's.  I will check residual diagnostics for the other model assumptions.  Note that in the summary, 1 observation was deleted due to missingness, illustrating that R will deal with missing values for you.
+
+Multiple R-squared is 0.7142; that is, the model accounts for about 71% of the variance we see in the data, which is a good indication that the model is a good fit.
+
+## Residual plots: linearity, normality, and constant variance checks
+Using the augment function from the broom package enables us to easily plot the residuals vs each explanatory variable.
+```{r}
+#Augment function provides model diagnostics such as .fitted and .resid.  Head commented out for visual appeal.
+mod_diag <- augment(mod)
+#head(mod_diag)
+```
+
+```{r fig.height=4}
+#Residual plots
+plot1 <- qplot(Age, .resid, ylab='Residuals', data = mod_diag) + 
+  geom_hline(aes(yintercept=0))
+
+plot2 <- qplot(Years.of.Experience, .resid, ylab='Residuals', data = mod_diag) + 
+  geom_hline(aes(yintercept=0))
+
+plot3 <- qplot(Country, .resid, ylab='Residuals', data = mod_diag) + 
+  geom_hline(aes(yintercept=0))
+
+plot4 <- qplot(Education.Level, .resid, ylab='Residuals', data = mod_diag) + 
+  geom_hline(aes(yintercept=0))
+
+grid.arrange(plot1, plot2, plot3, plot4, ncol=2)
+```
+
+We don't find any evidence of non-normality, and no major signs of non-constant variance in the residuals vs the explanatory variables, apart from some negative residuals on the high end, which could be significant, or could simply be where a portion of the data landed, but not enough to pull the regression line.  Next I plot the residuals vs the fitted values; that is, the distance between the individual values and the estimated line.
+
+```{r fig.height=3}
+
+#head(mod)
+#Residuals vs Fits
+qplot(.fitted, .resid, ylab='Residuals', xlab='Fitted Values', data = mod) +
+  geom_hline(aes(yintercept=0)) 
+```
+Taking a look at the residuals vs the fitted values, we don't see much evidence of non-normality or non-constant variance, but there's a slight pattern that can indicate some non-linearity.  However, the Multiple R-squared value indicated a good fit, so it's not *too* alarming in this case.  For inference to the population, the four assumptions of Multiple Linear Regression are essential for valid inference, and for prediction, they're still important, although the prediction error will speak for itself.  For description, we still need the MLR model to be a good fit, so it's important that the assumptions are satisfied, and that we have a decent Multiple R-squared value to indicate that our analysis is valid.
+
+## Cook's Distance for Outliers
+One more check we can perform for outliers is to examine the Cook's distance, in order to assess whether any values in particular had a high influence on the model statistics.  If a data point's removal would result in a large change to the model's beta estimates, then that data point will have a high Cook's distance.
+
+```{r fig.height=3}
+#Plot Cook's Distance against Data Points
+qplot(1:6698, .cooksd, data = mod_diag, xlab='Data Points', ylab="Cook's Distance") 
+#dat[mod_diag$.cooksd > 0.6, ] #Check which points have high Cook's distance, above 0.6
+```
+The highest points had a Cook's distance of about 0.008--very small.  This provides an empirical backing to our visual estimate that there are no concerning outliers in the data.
+
+## Variance Inflation Factor for Multicollinearity
+For a more formal check for multicollinearity other than the plot examination above, we can check the Variance Inflation Factor.
+```{r}
+#Check Variance Inflation Factor to assess multicollinearity
+vif(mod)
+```
+We see that Age and Years of Experience have particularly high VIF values (not close to 1), indicating the multicollinearity we suspected before.  Multicollinearity causes the variance of these two variables to increase, as it is difficult to assess which was responsible for the effects measured, since the two variables coincide so much.  One approach would be to fit multiple models, each containing only one of the two variables.  For this demo, though, I just wanted to touch on it.
+
+## Summary
+
+**The four assumptions of multiple linear regression were checked.  Independence was assumed due to the difficulty of examination of data collection (and the fact that this is a demo).  Linearity of the numerical variables against the response was shown in residual plots, and backed up by the Multiple R-squared value of 0.71.  Normality and constant variance of the residuals were assessed graphically as well.  Multicollinearity of Age and Years of Experience was suspected graphically and confirmed with the Variance Inflation Factor (note that we would then NOT construct confidence intervals based on the variance in the model summary).  We empirically checked for outliers with Cook's Distance and found none.**
+
+**With these checks satisfied, the Multiple Linear Regression model is valid with the following findings.  Note that these are observed correlations only; we are not conducting inference to the population--to conduct inference on a population, we would have to randomly select employees from the population, and we have no guarantee that that's where these data came from.  Nor can we make causal inference, because we did not conduct randomized trials.**
+
+**With an intercept of $110,760, we find that Age is significant with p-value < 0.01.  On average, each year of age decreases salary by $1,919, holding all other variables constant.  Years of Experience is a significant variable also, with p-value < 0.01.  Holding all other variables constant, each year of experience increases salary by $8,010. High School, Master's, and PhD are all significant, each with p-value < 0.01.  Having only a High School education, compared to the intercept value of a Bachelor's, decreases salary by $36,899 on average, holding all other variables constant.  A Master's degree increases salary by $10,602, on average, and a PhD increases salary by an average of $23,423, holding all other variables constant.**
+
+**A more prescriptive statement about the data than the formal statistical analysis would be welcome by stakeholders.  What I find with higher degrees resulting in higher salary is that it's not really anything surprising.  Country having no significant effect was interesting.  What I do find surprising here is that the older the employee is, the lower the salary will be, although this will be counteracted by gaining another year of experience.  It suggests the presence of ageism in the workplace, which would morally be something to recommend taking steps against, however that may be accomplished.  However, the multicollinearity of Age and Years of Experience in this dataset would have to be addressed before declaring that that's what's taking place.**
